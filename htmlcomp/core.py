@@ -84,6 +84,8 @@ class Element:
             msg = f"Expected str; got {type(key).__name__}"
 
     def __eq__(self, other):
+        if not isinstance(other, Element):
+            return NotImplemented
         return (self.name == other.name
                 and self.attributes == other.attributes
                 and self.children == other.children)
