@@ -29,9 +29,9 @@ VOID_ELEMENTS = (
 )
 
 
+__all__ = []
 for element in ALL_ELEMENTS:
     cls = component(element, void=(element in VOID_ELEMENTS))
-    globals()[html_name_to_python(element)] = cls
-
-
-__all__ = [html_name_to_python(element) for element in ALL_ELEMENTS]
+    name = html_name_to_python(element)
+    globals()[name] = cls
+    __all__.append(name)
