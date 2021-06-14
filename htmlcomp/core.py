@@ -1,4 +1,4 @@
-__all__ = ["Element", "component", "html_name_to_python", "python_name_to_html"]
+__all__ = ["Element", "component", "html_name_to_python", "python_name_to_html", "ParseError"]
 
 import re
 from keyword import iskeyword
@@ -118,7 +118,7 @@ class Element:
         if isinstance(key, str):
             return key in self.attributes
         else:
-            msg = f"Expected str; got {type(key).__name__}"
+            raise TypeError(f"Expected str; got {type(key).__name__}")
 
     def __eq__(self, other):
         if not isinstance(other, Element):
@@ -144,8 +144,7 @@ class Element:
     def parse(data):
         parser = Parser()
         parser.feed(data)
-        parser.close()
-        return parser.root
+        return parser.close()
 
     def _add_to_builder(self, builder):
         rendered = self.render()
@@ -229,6 +228,13 @@ class Parser(HTMLParser):
         self.root = Element("")
         self.stack = [self.root]
 
+    def close(self):
+        super().close()
+        unclosed_tags = len(self.stack) - 1
+        if unclosed_tags > 0:
+            raise ParseError(f"{unclosed_tags} unclosed tag(s)")
+        return self.root
+
     def add(self, value):
         self.stack[-1](value)
 
@@ -258,9 +264,13 @@ class Parser(HTMLParser):
         if tag == start_tag:
             self.close_tag()
         else:
-            raise ValueError(
-                    f"End tag {repr(tag)} "
-                    f"does not match start tag {repr(start_tag)}")
+            if start_tag:
+                raise ParseError(
+                        f"End tag {repr(tag)} "
+                        f"does not match start tag {repr(start_tag)}")
+            else:
+                raise ParseError(
+                        f"End tag {repr(tag)} has no matching start tag")
 
 
     def handle_startendtag(self, tag, attrs):
@@ -268,3 +278,7 @@ class Parser(HTMLParser):
 
     def handle_data(self, data):
         self.add(data)
+
+
+class ParseError(Exception):
+    pass

@@ -176,3 +176,51 @@ class TestHtmlComp(unittest.TestCase):
                 "gh"
             )
         )
+
+    def test_mismatched_tags(self):
+        with self.assertRaises(ParseError):
+            Element.parse("<div></p>")
+
+    def test_extra_closing_tag(self):
+        with self.assertRaises(ParseError):
+            Element.parse("<p></p></div>")
+
+    def test_contains(self):
+        element = p("hello", _class=set(), id="greeting")
+
+        self.assertTrue("_class" in element)
+        self.assertFalse("class" in element)
+
+        self.assertTrue("id" in element)
+
+        self.assertFalse("hello" in element)
+
+        with self.assertRaises(TypeError):
+            0 in element
+
+        with self.assertRaises(TypeError):
+            [] in element
+
+    def test_getitem(self):
+        element = p("hello", "there", _class=set(), id="greeting")
+
+        self.assertEqual(element[0], "hello")
+        self.assertEqual(element[1], "there")
+        self.assertEqual(element[-1], "there")
+
+        with self.assertRaises(IndexError):
+            element[2]
+
+        with self.assertRaises(IndexError):
+            element[-3]
+
+        self.assertEqual(element[-1::-1], ["there", "hello"])
+
+        self.assertEqual(element["_class"], set())
+        self.assertEqual(element["id"], "greeting")
+
+        with self.assertRaises(KeyError):
+            element["class"]
+
+        with self.assertRaises(TypeError):
+            element[None]
