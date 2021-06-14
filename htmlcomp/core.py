@@ -6,7 +6,7 @@ __all__ = [
     "ParseError"
 ]
 
-import re
+from typing import *
 from keyword import iskeyword
 from inspect import getmembers
 from html.parser import HTMLParser
@@ -19,42 +19,127 @@ def prefixed_attributes(obj, prefix):
 
 
 class Element:
-    subclasses = {}
-    void = False
+    """Represent an HTML element or custom component.
 
-    def __init_subclass__(cls, /, void = None, **kwargs):
+    Note that all elements are instances of ``Element``, even if the
+    element is created by calling a subclass. All subclass-specific
+    functionality is handled by finding the subclass corresponding to
+    the element name and calling the corresponding static methods. This
+    allows the type of an element to be changed by changing the
+    element's ``name`` attribute.
+    """
+
+    subclasses: ClassVar[dict[str, type]] = {}
+    """Subclasses of Element, indexed by lowercase element names."""
+
+    void: ClassVar[bool] = False
+    """Whether this element is a void element."""
+
+    name: str
+    """The name of this element (e.g. ``div``, ``p``, ``span``)."""
+
+    attributes: dict[str, Any]
+    """This element's attributes.
+
+    Attribute names use underscores instead of dashes, so the
+    ``accept-charset`` attribute is accessed with the
+    ``"accept_charset"`` key. Attribute names that conflict with Python
+    keywords are prefixed with an underscore, so the ``class`` attribute
+    is accessed with the ``"_class"`` key. These conversions ensure that
+    attribute names are always valid Python identifiers, allowing them
+    to be provided as keyword arguments.
+    """
+
+    children: list[Any]
+    """This element's children.
+
+    Children are typically elements (including components and fragments)
+    or strings, but they can be arbitrary values.
+    """
+
+    def __init_subclass__(cls, /, void: Optional[bool] = None):
+        """
+        Initialize an Element subclass.
+
+        The name of the class is converted to lowercase and used as the
+        element name.
+
+        Static methods on the subclass can be used to customize
+        attribute parsing and serialization. If a HTML string contains
+        an element with a name matching a subclass, the element has a
+        ``foo`` attribute (for example), and a static method named
+        ``parse_foo`` exists on the subclass, then that method will be
+        used to parse the value of the ``foo`` attribute.
+
+        Similarly, a static method named ``str_foo`` could be used to
+        convert the attribute back to a string when generating HTML.
+
+        :param void: Whether this element is a void element (in other
+            words, whether this element should not have closing tags)
+        """
         if void is not None:
             cls.void = void
         cls.parse_funcs = prefixed_attributes(cls, "parse_")
         cls.str_funcs = prefixed_attributes(cls, "str_")
         Element.subclasses[cls.__name__.lower()] = cls
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **attributes):
         element = super().__new__(Element)
 
-        if cls is not Element:
-            name = cls.__name__.lower()
-        else:
+        if cls is Element:
             name = args[0].lower()
-            args = args[1:]
+            children = args[1:]
+        else:
+            name = cls.__name__.lower()
+            children = args
 
         element.name = name
         element.attributes = Element.subclasses[name].default_attributes()
         element.children = []
-        element(*args, **kwargs)
+        element(*children, **attributes)
 
         return element
 
-    def __call__(self, *children, **attributes):
+    def __init__(self, *args, **attributes):
+        """
+        Create a new element.
+
+        This method doesn't actually do anything, because ``__new__``
+        initializes the object instance.
+
+        :param args: The name of the element if calling the ``Element``
+            class directly, followed by any children to add.
+        :param attributes: Any attributes to add.
+        """
+        pass
+
+    def __call__(self, *children, **attributes) -> "Element":
+        """Add children and add or modify attributes.
+
+        :param children: Children to add.
+        :param attributes: Attributes to add or modify. Hyphens in
+            attribute names should be replaced with underscores, and
+            attribute names that conflict with Python keywords should
+            be prefixed with an underscore.
+        :return: This element.
+        """
         self.children.extend(children)
         self.attributes.update(attributes)
         return self
 
-    def copy(self):
+    def copy(self) -> "Element":
+        """Return a shallow copy of this element."""
         return Element(self.name, *self.children, **self.attributes)
 
-    def shallow_normalize(self):
-        # Flatten fragments.
+    def shallow_normalize(self) -> None:
+        """Normalize this element's children.
+
+        Consolidate adjacent strings, remove empty strings, and replace
+        fragments with the fragments' children.
+
+        To normalize this element's entire subtree, use ``normalize``
+        instead.
+        """
         flattened = []
         for child in self:
             if isinstance(child, Element) and not child.name:
@@ -62,7 +147,6 @@ class Element:
             else:
                 flattened.append(child)
 
-        # Normalize text nodes.
         normalized = []
         for child in flattened:
             if isinstance(child, str):
@@ -79,16 +163,32 @@ class Element:
 
         self.children = normalized
 
-    def normalize(self):
+    def normalize(self) -> None:
+        """Recursively normalize this element's subtree."""
         for child in self:
             if isinstance(child, Element):
                 child.shallow_normalize()
         self.shallow_normalize()
 
-    def transform(*children, **attributes):
-        pass
+    @staticmethod
+    def transform(*children, **attributes) -> Any:
+        """Transform a component of this type for rendering.
 
-    def render(self):
+        :param children: The component's children.
+        :param attributes: The component's attributes.
+        :return: A partially rendered value. This is typically an
+            element, a fragment, another component, or a string, but it
+            can be any value. Use ``None`` to indicate that no
+            transformation is necessary. Use an empty string or empty
+            fragment to return nothing.
+        """
+        return None
+
+    def render(self) -> "Element":
+        """Recursively transform this component and its children.
+
+        :return: The transformed and normalized result.
+        """
         # Transform recursively until None is returned, indicating that
         # no more transformations are necessary.
         subclass = Element.subclasses[self.name]
@@ -96,9 +196,12 @@ class Element:
         if isinstance(transformed, Element):
             return transformed.render()
         elif transformed is not None:
+            # Wrap non-Element results in a fragment.
             return Element("", transformed)
 
         rendered = self.copy()
+
+        # Render all children.
         for i, child in enumerate(rendered):
             if isinstance(child, Element):
                 rendered[i] = child.render()
@@ -106,7 +209,7 @@ class Element:
         rendered.shallow_normalize()
         return rendered
 
-    def _container_proxy(self, key):
+    def _container_proxy(self, key: Union[str, int, slice]):
         if isinstance(key, str):
             return self.attributes
         elif isinstance(key, (int, slice)):
@@ -116,22 +219,28 @@ class Element:
                     "Expected str, int, or slice; "
                     f"got {type(key).__name__}")
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Union[str, int, slice]) -> Any:
+        """Get an attribute, a child, or a slice of children."""
         return self._container_proxy(key)[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Union[str, int, slice], value: Any) -> None:
+        """Replace an attribute, a child, or a slice of children."""
         self._container_proxy(key)[key] = value
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: Union[str, int, slice]) -> None:
+        """Delete an attribute, a child, or a slice of children."""
         del self._container_proxy(key)[key]
 
     def __iter__(self):
+        """Iterate over this element's children."""
         return iter(self.children)
 
     def __len__(self):
+        """Return the number of children that this element has."""
         return len(self.children)
 
-    def __contains__(self, key):
+    def __contains__(self, key: str) -> bool:
+        """Return whether this element has an attribute."""
         if isinstance(key, str):
             return key in self.attributes
         else:
@@ -158,12 +267,13 @@ class Element:
         return f"Element({repr(self.name)}{attributes}){children}"
 
     @staticmethod
-    def parse(data):
+    def parse(data: str) -> "Element":
+        """Parse HTML and return the parsed nodes in a fragment."""
         parser = Parser()
         parser.feed(data)
         return parser.close()
 
-    def _add_to_builder(self, builder):
+    def _add_to_builder(self, builder: ElementTree.TreeBuilder) -> None:
         subclass = Element.subclasses[self.name]
 
         attributes = {}
@@ -187,6 +297,7 @@ class Element:
         builder.end(self.name)
 
     def __str__(self):
+        """Render this element and convert it to an HTML string."""
         rendered = self.render()
 
         builder = ElementTree.TreeBuilder()
@@ -200,7 +311,10 @@ class Element:
         return string
 
     @staticmethod
-    def default_attributes():
+    def default_attributes() -> dict[str, Any]:
+        """Return a dictionary of default attributes for this type of
+        element.
+        """
         return dict(_class=set())
 
     @staticmethod
@@ -215,7 +329,15 @@ class Element:
             return None
 
 
-def component(transform_or_name, /, **kwargs):
+def component(transform_or_name: Union[str, Callable], /, **kwargs) -> type:
+    """Create a new component type from a transform function or string.
+
+    If a transform function is provided, the function name is used as
+    the element name. If a string is provided, then that string is used
+    as the element name, and the component is not transformed.
+
+    All keyword arguments are passed to ``Element.__init_subclass__()``.
+    """
     if isinstance(transform_or_name, str):
         transform = None
         name = transform_or_name
@@ -235,14 +357,14 @@ def component(transform_or_name, /, **kwargs):
     return type(name, (Element,), class_dict, **kwargs)
 
 
-def html_name_to_python(name):
+def html_name_to_python(name: str) -> str:
     name = name.replace("-", "_")
     if iskeyword(name):
         name = "_" + name
     return name
 
 
-def python_name_to_html(name):
+def python_name_to_html(name: str) -> str:
     if name.startswith("_") and iskeyword(name[1:]):
         name = name[1:]
     name = name.replace("_", "-")
@@ -297,7 +419,6 @@ class Parser(HTMLParser):
             else:
                 raise ParseError(
                         f"End tag {repr(tag)} has no matching start tag")
-
 
     def handle_startendtag(self, tag, attrs):
         self.open_tag(tag, attrs, True)
