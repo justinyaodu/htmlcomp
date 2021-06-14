@@ -93,8 +93,10 @@ class Element:
         # no more transformations are necessary.
         subclass = Element.subclasses[self.name]
         transformed = subclass.transform(*self.children, **self.attributes)
-        if transformed is not None:
+        if isinstance(transformed, Element):
             return transformed.render()
+        elif transformed is not None:
+            return Element("", transformed)
 
         rendered = self.copy()
         for i, child in enumerate(rendered):
