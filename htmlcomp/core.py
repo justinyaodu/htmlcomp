@@ -2,8 +2,14 @@ __all__ = ["Element", "component", "html_name_to_python", "python_name_to_html",
 
 import re
 from keyword import iskeyword
+from inspect import getmembers
 from html.parser import HTMLParser
 from xml.etree import ElementTree
+
+
+def prefixed_attributes(obj, prefix):
+    return {k[len(prefix):]: v
+            for k, v in getmembers(obj) if k.startswith(prefix)}
 
 
 class Element:
@@ -13,18 +19,21 @@ class Element:
     def __init_subclass__(cls, /, void = None, **kwargs):
         if void is not None:
             cls.void = void
+        cls.parse_funcs = prefixed_attributes(cls, "parse_")
+        cls.str_funcs = prefixed_attributes(cls, "str_")
         Element.subclasses[cls.__name__.lower()] = cls
 
     def __new__(cls, *args, **kwargs):
         element = super().__new__(Element)
 
         if cls is not Element:
-            element.name = cls.__name__.lower()
+            name = cls.__name__.lower()
         else:
-            element.name = args[0].lower()
+            name = args[0].lower()
             args = args[1:]
 
-        element.attributes = {}
+        element.name = name
+        element.attributes = Element.subclasses[name].default_attributes()
         element.children = []
         element(*args, **kwargs)
 
@@ -152,12 +161,12 @@ class Element:
 
         attributes = {}
         for name, value in rendered.attributes.items():
-            to_str = getattr(subclass, f"str_{name}", None)
-            if to_str is not None:
-                value = to_str(value)
+            if name in subclass.str_funcs:
+                value = subclass.str_funcs[name](value)
+                if value is None:
+                    continue
             else:
                 value = str(value)
-
             attributes[python_name_to_html(name)] = value
 
         builder.start(rendered.name, attributes)
@@ -181,11 +190,20 @@ class Element:
             string = string[2:-3]
         return string
 
+    @staticmethod
+    def default_attributes():
+        return dict(_class=set())
+
+    @staticmethod
     def parse__class(_class):
         return set(_class.split())
 
+    @staticmethod
     def str__class(_class):
-        return " ".join(sorted(_class))
+        if _class:
+            return " ".join(sorted(_class))
+        else:
+            return None
 
 
 def component(transform_or_name, /, **kwargs):
@@ -242,10 +260,9 @@ class Parser(HTMLParser):
         subclass = Element.subclasses[tag]
 
         attributes = {html_name_to_python(k): v for k, v in attributes}
-        for name in attributes:
-            from_str = getattr(subclass, f"parse_{name}", None)
-            if from_str is not None:
-                attributes[name] = from_str(attributes[name])
+        for name, value in attributes.items():
+            if name in subclass.parse_funcs:
+                attributes[name] = subclass.parse_funcs[name](value)
 
         element = subclass(**attributes)
         self.add(element)

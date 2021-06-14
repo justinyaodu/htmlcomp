@@ -13,6 +13,9 @@ class OrderedList(Element):
     def parse_items(items):
         return items.split(",")
 
+    def default_attributes():
+        return dict(_class={"list", "fancy"})
+
     def transform(*, items, **attributes):
         return ol(*[li(item) for item in items], **attributes)
 
@@ -20,7 +23,7 @@ class OrderedList(Element):
 class TestHtmlComp(unittest.TestCase):
     def _test_html(self, html):
         root = Element.parse(html)
-        self.assertEqual(html, str(root))
+        self.assertEqual(root, Element.parse(str(root)))
         self.assertEqual(root, eval(repr(root)))
 
     def test_div(self):
@@ -58,18 +61,13 @@ class TestHtmlComp(unittest.TestCase):
 
     def test_attribute(self):
         element = div()
-        self.assertFalse("_class" in element)
+        self.assertFalse("id" in element)
 
-        element(_class=set(["foo"]))
-        self.assertTrue("_class" in element)
+        element(id="foo")
+        self.assertTrue("id" in element)
 
-        del element["_class"]
-        self.assertFalse("_class" in element)
-
-        element["_class"] = set(["bar"])
-        self.assertTrue("_class" in element)
-
-        self.assertEqual(element["_class"], set(["bar"]))
+        del element["id"]
+        self.assertFalse("id" in element)
 
     def test_children(self):
         element = p(strong("Lorem ipsum"), " ", em("dolor sit amet"), ".")
@@ -98,7 +96,7 @@ class TestHtmlComp(unittest.TestCase):
         self.assertEqual(
             Element.parse(str(element)),
             Element.parse("".join([
-                '<ol id="greek-letters">',
+                '<ol id="greek-letters" class="list fancy">',
                 '<li>alpha</li>',
                 '<li>beta</li>',
                 '<li>gamma</li>',
@@ -113,7 +111,7 @@ class TestHtmlComp(unittest.TestCase):
         element[0][:] = []
         self.assertEqual(
             Element.parse(str(element)),
-            fragment(ol(li("hi")))
+            fragment(ol(_class={"list", "fancy"})(li("hi")))
         )
 
     def test_shallow_normalize(self):
