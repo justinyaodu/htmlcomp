@@ -162,11 +162,10 @@ class Element:
         return parser.close()
 
     def _add_to_builder(self, builder):
-        rendered = self.render()
-        subclass = Element.subclasses[rendered.name]
+        subclass = Element.subclasses[self.name]
 
         attributes = {}
-        for name, value in rendered.attributes.items():
+        for name, value in self.attributes.items():
             if name in subclass.str_funcs:
                 value = subclass.str_funcs[name](value)
                 if value is None:
@@ -175,23 +174,25 @@ class Element:
                 value = str(value)
             attributes[python_name_to_html(name)] = value
 
-        builder.start(rendered.name, attributes)
+        builder.start(self.name, attributes)
 
-        for child in rendered:
+        for child in self:
             if isinstance(child, Element):
                 child._add_to_builder(builder)
             else:
                 builder.data(str(child))
 
-        builder.end(rendered.name)
+        builder.end(self.name)
 
     def __str__(self):
+        rendered = self.render()
+
         builder = ElementTree.TreeBuilder()
-        self._add_to_builder(builder)
+        rendered._add_to_builder(builder)
         root = builder.close()
 
         string = ElementTree.tostring(root, encoding="unicode", method="html")
-        if not self.name:
+        if not rendered.name:
             # Remove fragment start and end tags.
             string = string[2:-3]
         return string
