@@ -295,6 +295,20 @@ Element('', **{'_class': set()})(120)
 
 This example illustrates that components can actually return arbitrary data, which is then converted to a string.
 
+## Testing
+
+Run unit tests:
+
+```
+python -m unittest tests/test_htmlcomp.py
+```
+
+Run the examples in the README (some errors are normal because the order of elements in a set can differ):
+
+```
+python -m doctest README.md
+```
+
 ## Sources of Inspiration
 
 * [React](https://reactjs.org): function and class components, using attributes like props, and fragments
