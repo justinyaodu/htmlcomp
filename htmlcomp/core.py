@@ -70,21 +70,21 @@ class Element:
                 child.shallow_normalize()
         self.shallow_normalize()
 
-    def render(*children, **attributes):
+    def transform(*children, **attributes):
         pass
 
-    def _render(self):
-        # Render recursively until None is returned, indicating that no
-        # more transformations are necessary.
+    def render(self):
+        # Transform recursively until None is returned, indicating that
+        # no more transformations are necessary.
         subclass = Element.subclasses[self.name]
-        rendered = subclass.render(*self.children, **self.attributes)
-        if rendered is not None:
-            return rendered._render()
+        transformed = subclass.transform(*self.children, **self.attributes)
+        if transformed is not None:
+            return transformed.render()
 
         rendered = self.copy()
         for i, child in enumerate(rendered):
             if isinstance(child, Element):
-                rendered[i] = child._render()
+                rendered[i] = child.render()
 
         rendered.shallow_normalize()
         return rendered
@@ -95,8 +95,9 @@ class Element:
         elif isinstance(key, (int, slice)):
             return self.children
         else:
-            msg = f"Expected str, int, or slice; got {type(key).__name__}"
-            raise TypeError(msg)
+            raise TypeError(
+                    "Expected str, int, or slice; "
+                    f"got {type(key).__name__}")
 
     def __getitem__(self, key):
         return self._container_proxy(key)[key]
@@ -147,7 +148,7 @@ class Element:
         return parser.root
 
     def _add_to_builder(self, builder):
-        rendered = self._render()
+        rendered = self.render()
         subclass = Element.subclasses[rendered.name]
 
         attributes = {}
@@ -188,16 +189,20 @@ class Element:
         return " ".join(sorted(_class))
 
 
-def component(render_or_name, /, **kwargs):
-    if isinstance(render_or_name, str):
-        render_func = None
-        name = render_or_name
+def component(transform_or_name, /, **kwargs):
+    if isinstance(transform_or_name, str):
+        transform = None
+        name = transform_or_name
+    elif callable(transform_or_name):
+        transform = transform_or_name
+        name = transform.__name__
     else:
-        render_func = render_or_name
-        name = render_func.__name__
+        raise TypeError(
+                "Expected str or callable; "
+                f"got {type(transform_or_name).__name__}")
 
-    if render_func is not None:
-        class_dict = dict(render=render_func)
+    if transform is not None:
+        class_dict = dict(transform=transform)
     else:
         class_dict = {}
 
@@ -253,11 +258,10 @@ class Parser(HTMLParser):
         if tag == start_tag:
             self.close_tag()
         else:
-            msg = "".join([
-                f"End tag {repr(tag)} ",
-                f"does not match start tag {repr(start_tag)}"
-            ])
-            raise ValueError(msg)
+            raise ValueError(
+                    f"End tag {repr(tag)} "
+                    f"does not match start tag {repr(start_tag)}")
+
 
     def handle_startendtag(self, tag, attrs):
         self.open_tag(tag, attrs, True)

@@ -13,7 +13,7 @@ class OrderedList(Element):
     def parse_items(items):
         return items.split(",")
 
-    def render(*, items, **attributes):
+    def transform(*, items, **attributes):
         return ol(*[li(item) for item in items], **attributes)
 
 
