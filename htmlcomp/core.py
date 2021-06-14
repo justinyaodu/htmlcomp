@@ -1,4 +1,10 @@
-__all__ = ["Element", "component", "html_name_to_python", "python_name_to_html", "ParseError"]
+__all__ = [
+    "Element",
+    "component",
+    "html_name_to_python",
+    "python_name_to_html",
+    "ParseError"
+]
 
 import re
 from keyword import iskeyword
@@ -147,7 +153,7 @@ class Element:
         else:
             children = ""
 
-        return f"{type(self).__name__}({repr(self.name)}{attributes}){children}"
+        return f"Element({repr(self.name)}{attributes}){children}"
 
     @staticmethod
     def parse(data):
