@@ -35,25 +35,61 @@ class Element:
         self.attributes.update(attributes)
         return self
 
+    def copy(self):
+        return Element(self.name, *self.children, **self.attributes)
+
+    def shallow_normalize(self):
+        # Flatten fragments.
+        flattened = []
+        for child in self:
+            if isinstance(child, Element) and not child.name:
+                flattened.extend(child)
+            else:
+                flattened.append(child)
+
+        # Normalize text nodes.
+        normalized = []
+        for child in flattened:
+            if isinstance(child, str):
+                if not child:
+                    # Remove empty strings.
+                    continue
+                elif normalized and isinstance(normalized[-1], str):
+                    # Combine adjacent strings.
+                    normalized[-1] += child
+                else:
+                    normalized.append(child)
+            else:
+                normalized.append(child)
+
+        self.children = normalized
+
+    def normalize(self):
+        for child in self:
+            if isinstance(child, Element):
+                child.shallow_normalize()
+        self.shallow_normalize()
+
     def render(*children, **attributes):
         pass
 
     def _render(self):
-        current = self
-        while True:
-            subclass = Element.subclasses[current.name]
-            rendered = subclass.render(*current.children, **current.attributes)
-            if rendered is None:
-                break
-            current = rendered
+        # Render recursively until None is returned, indicating that no
+        # more transformations are necessary.
+        subclass = Element.subclasses[self.name]
+        rendered = subclass.render(*self.children, **self.attributes)
+        if rendered is not None:
+            return rendered._render()
 
-        for i, child in enumerate(current):
+        rendered = self.copy()
+        for i, child in enumerate(rendered):
             if isinstance(child, Element):
-                current[i] = child._render()
+                rendered[i] = child._render()
 
-        return current
+        rendered.shallow_normalize()
+        return rendered
 
-    def _proxy(self, key):
+    def _container_proxy(self, key):
         if isinstance(key, str):
             return self.attributes
         elif isinstance(key, (int, slice)):
@@ -63,13 +99,13 @@ class Element:
             raise TypeError(msg)
 
     def __getitem__(self, key):
-        return self._proxy(key)[key]
+        return self._container_proxy(key)[key]
 
     def __setitem__(self, key, value):
-        self._proxy(key)[key] = value
+        self._container_proxy(key)[key] = value
 
     def __delitem__(self, key):
-        del self._proxy(key)[key]
+        del self._container_proxy(key)[key]
 
     def __iter__(self):
         return iter(self.children)
@@ -138,7 +174,12 @@ class Element:
         builder = ElementTree.TreeBuilder()
         self._add_to_builder(builder)
         root = builder.close()
-        return ElementTree.tostring(root, encoding="unicode", method="html")
+
+        string = ElementTree.tostring(root, encoding="unicode", method="html")
+        if not self.name:
+            # Remove fragment start and end tags.
+            string = string[2:-3]
+        return string
 
     def parse__class(_class):
         return set(_class.split())
@@ -180,22 +221,11 @@ def python_name_to_html(name):
 class Parser(HTMLParser):
     def reset(self):
         super().reset()
-        self.root = None
-        self.stack = []
+        self.root = Element("")
+        self.stack = [self.root]
 
     def add(self, value):
-        if self.stack:
-            self.stack[-1](value)
-            return
-
-        if isinstance(value, Element):
-            if self.root is None:
-                self.root = value
-            else:
-                raise ValueError("Multiple root elements")
-        else:
-            if not re.match(r"\s*", value):
-                raise ValueError("Text outside of root element")
+        self.stack[-1](value)
 
     def open_tag(self, tag, attributes, self_closing):
         subclass = Element.subclasses[tag]
@@ -207,12 +237,10 @@ class Parser(HTMLParser):
                 attributes[name] = from_str(attributes[name])
 
         element = subclass(**attributes)
-
         self.add(element)
-        self.stack.append(element)
 
-        if subclass.void or self_closing:
-            self.close_tag()
+        if not subclass.void and not self_closing:
+            self.stack.append(element)
 
     def close_tag(self):
         self.stack.pop()
@@ -221,14 +249,15 @@ class Parser(HTMLParser):
         self.open_tag(tag, attrs, False)
 
     def handle_endtag(self, tag):
-        # Handle implicitly closed tags.
-        while self.stack and self.stack[-1].name != tag:
-            self.close_tag()
-
-        if self.stack:
+        start_tag = self.stack[-1].name
+        if tag == start_tag:
             self.close_tag()
         else:
-            raise ValueError("Unpaired end tag")
+            msg = "".join([
+                f"End tag {repr(tag)} ",
+                f"does not match start tag {repr(start_tag)}"
+            ])
+            raise ValueError(msg)
 
     def handle_startendtag(self, tag, attrs):
         self.open_tag(tag, attrs, True)

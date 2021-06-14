@@ -32,7 +32,7 @@ class TestHtmlComp(unittest.TestCase):
     def test_erroneous_self_closing_void_element(self):
         self.assertEqual(
             Element.parse('<div>Oops, <img src="banana.png"/> I did it again!</div>'),
-            div("Oops, ", img(src="banana.png"), " I did it again!")
+            fragment(div("Oops, ", img(src="banana.png"), " I did it again!"))
         )
 
     def test_explicit_element_name(self):
@@ -86,11 +86,11 @@ class TestHtmlComp(unittest.TestCase):
         element = RedBox(p("some text"), "stuff", blockquote("That's pretty rad!"), id="content")
         self.assertEqual(
             Element.parse(str(element)),
-            div(id="content", style="background-color: red;")(
+            fragment(div(id="content", style="background-color: red;")(
                 p("some text"),
                 "stuff",
                 blockquote("That's pretty rad!"),
-            )
+            ))
         )
 
     def test_class_component(self):
@@ -110,15 +110,69 @@ class TestHtmlComp(unittest.TestCase):
         with self.assertRaises(TypeError):
             str(element)
 
-        element[:] = []
+        element[0][:] = []
         self.assertEqual(
             Element.parse(str(element)),
-            ol(li("hi"))
+            fragment(ol(li("hi")))
         )
 
-    def test_implicitly_closed_tag(self):
+    def test_shallow_normalize(self):
+        element = div(
+            "a",
+            fragment("b", "c", div(), fragment("d"), "e"),
+            "f",
+            div(),
+            "",
+            div(),
+        )
+        element.shallow_normalize()
         self.assertEqual(
-            # div is implicitly closed
-            Element.parse("<table><tr><td><div>hello</td></tr></table>"),
-            table(tr(td(div("hello"))))
+            element,
+            div(
+                "abc",
+                div(),
+                fragment("d"),
+                "ef",
+                div(),
+                div(),
+            )
+        )
+
+    def test_normalize(self):
+        element = div(
+            "a",
+            fragment(
+                "b",
+                fragment(
+                    "",
+                    "c",
+                    div(),
+                    "d",
+                    "",
+                ),
+                "e",
+                fragment(
+                    "f",
+                    div(),
+                    "",
+                    div(),
+                ),
+                "",
+                div(),
+                "g"
+            ),
+            "h"
+        )
+        element.normalize()
+        self.assertEqual(
+            element,
+            div(
+                "abc",
+                div(),
+                "def",
+                div(),
+                div(),
+                div(),
+                "gh"
+            )
         )

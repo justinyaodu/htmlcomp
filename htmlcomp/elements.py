@@ -29,7 +29,10 @@ VOID_ELEMENTS = (
 )
 
 
-__all__ = []
+fragment = component("")
+
+
+__all__ = ["fragment"]
 for element in ALL_ELEMENTS:
     cls = component(element, void=(element in VOID_ELEMENTS))
     name = html_name_to_python(element)
